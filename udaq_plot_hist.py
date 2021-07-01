@@ -65,22 +65,12 @@ adc_gain = {
 
 parser = argparse.ArgumentParser('uDAQ histogram plotter')
 
-
-def parser_plot(i: str) -> pathlib.Path:
-    p = pathlib.Path(i)
-    if not p.exists():
-        raise ValueError(f'histogram {p} does not exist')
-    return p
-
-
 parser.add_argument(
     'plot',
     metavar='HIST',
-    nargs='+',
+    nargs='*',
     help='histograms to plot (files/directories)',
-    type=parser_plot,
 )
-
 
 def parser_adcs(i: str) -> list[int]:
     '''parse comma separated list of ADCs'''
@@ -136,13 +126,18 @@ args = parser.parse_args()
 histograms: dict[pathlib.Path, dict[int, np.ndarray]] = {}
 
 for hist_path in args.plot:
-    hist_path: pathlib.Path = hist_path
+    if ':' in hist_path:
+        hist_name, _, hist_path = hist_path.partition(':')
+        hist_path = pathlib.Path(hist_path)
+    else:
+        hist_path = pathlib.Path(hist_path)
+        hist_name = hist_path.name
     if hist_path.is_file():
         adc_index, data = decode_hist(hist_path)
-        histograms[hist_path] = {adc_index: data}
+        histograms[hist_name] = {adc_index: data}
     elif hist_path.is_dir():
         hists = {}
-        histograms[hist_path] = hists
+        histograms[hist_name] = hists
         for file in hist_path.iterdir():
             if not file.is_file():
                 continue
@@ -164,16 +159,16 @@ plt.figure(figsize=(args.size[0]/25.4, args.size[1]/25.4))
 if args.fit_gauss:
     print(f'{"µ":>10s} {"A":>10s}')
 
-for path, hists in histograms.items():
+for name, hists in histograms.items():
     for gain_index in args.adcs:
         # check if this ADC was read out
         if not gain_index in hists:
             logger.warning(
-                f'no {adc_gain[adc_index]} gain histogram in {path}')
+                f'no {adc_gain[adc_index]} gain histogram in {name}')
             continue
         # plot histogram
         hist = hists[gain_index]
-        label=f'{path.name} - {adc_gain[adc_index]} gain'
+        label=f'{name} - {adc_gain[adc_index]} gain'
         curve = plt.plot(
             hist,
             label=label,
@@ -194,7 +189,7 @@ for path, hists in histograms.items():
                 (A_guess,µ_guess, 20),
             )
             # print info
-            print(f'{popt[1]:10.1f} {popt[0]:10.1f} {adc_gain[adc_index]:>6s} {path.name}')
+            print(f'{popt[1]:10.1f} {popt[0]:10.1f} {adc_gain[adc_index]:>6s} {name}')
             # plot gaussian
             Y_fit = gauss_func(X_fit, *popt)
             Y_plot = Y_fit > 1
